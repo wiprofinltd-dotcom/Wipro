@@ -1,203 +1,127 @@
 __copyright__ = "Copyright (c) 2018-2025 Alex Laird"
 __license__ = "MIT"
 
-import datetime
 import os
-import sys
+from typing import Callable, Optional
 
-# -- Path setup --------------------------------------------------------------
+from pyngrok.installer import get_ngrok_bin, get_default_ngrok_dir
+from pyngrok.log import NgrokLog
 
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
+DEFAULT_CONFIG_PATH: Optional[str] = None
 
-sys.path.insert(0, os.path.abspath(".."))
+DEFAULT_NGROK_DIR = get_default_ngrok_dir()
+DEFAULT_NGROK_CONFIG_PATH = os.path.join(DEFAULT_NGROK_DIR, "ngrok.yml")
+DEFAULT_NGROK_PATH = os.path.join(DEFAULT_NGROK_DIR, get_ngrok_bin())
 
-# This import must happen after adding to sys.path so docs build is consistent across environments
-from pyngrok import __version__
 
-# -- Project information -----------------------------------------------------
+class PyngrokConfig:
+    """
+    An object containing ``pyngrok``'s configuration for interacting with the ``ngrok`` binary. All values are
+    optional when it is instantiated, and default values will be used for parameters not passed.
 
-project = "pyngrok"
-copyright = f"2018-{datetime.date.today().year}, Alex Laird"
-author = "Alex Laird"
+    Use :func:`~pyngrok.conf.get_default` and :func:`~pyngrok.conf.set_default` to interact with the default
+    ``pyngrok_config``, or pass another instance of this object as the ``pyngrok_config`` keyword arg to most
+    methods in the :mod:`~pyngrok.ngrok` module to override the default.
 
-# The short X.Y version
-version = __version__
-# The full version, including alpha/beta/rc tags
-release = version
+    .. code-block:: python
 
-# -- General configuration ---------------------------------------------------
+        from pyngrok import conf, ngrok
 
-# If your documentation needs a minimal Sphinx version, state it here.
-#
-# needs_sphinx = "1.0"
+        # Here you update the entire default config
+        pyngrok_config = conf.PyngrokConfig(ngrok_path="/usr/local/bin/ngrok")
+        conf.set_default(pyngrok_config)
 
-# Add any Sphinx extension module names here, as strings. They can be
-# extensions coming with Sphinx (named "sphinx.ext.*") or your custom
-# ones.
-extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.doctest",
-    "sphinx.ext.coverage",
-    "sphinx.ext.intersphinx",
-    "sphinx.ext.viewcode",
-    "notfound.extension",
-    "sphinx_autodoc_typehints",
-    "sphinx_substitution_extensions"
-]
-autodoc_member_order = "bysource"
+        # Here you update just one variable in the default config
+        conf.get_default().ngrok_path = "/usr/local/bin/ngrok"
 
-# Add any paths that contain templates here, relative to this directory.
-templates_path = ["_templates"]
+        # Here you leave the default config as-is and pass an override
+        pyngrok_config = conf.PyngrokConfig(ngrok_path="/usr/local/bin/ngrok")
+        ngrok.connect(pyngrok_config=pyngrok_config)
+    """
 
-# The suffix(es) of source filenames.
-# You can specify multiple suffix as a list of string:
-#
-source_suffix = [
-    ".rst"
-]
+    def __init__(self,
+                 ngrok_path: Optional[str] = None,
+                 config_path: Optional[str] = None,
+                 auth_token: Optional[str] = None,
+                 region: Optional[str] = None,
+                 monitor_thread: bool = True,
+                 log_event_callback: Optional[Callable[[NgrokLog], None]] = None,
+                 startup_timeout: int = 15,
+                 max_logs: int = 100,
+                 request_timeout: float = 4,
+                 start_new_session: bool = False,
+                 ngrok_version: str = "v3",
+                 api_key: Optional[str] = None,
+                 config_version: str = "2") -> None:
+        #: The path to the ``ngrok`` binary, defaults to being placed in the same directory as
+        #: `ngrok's configs <https://ngrok.com/docs/agent/config/v2>`_.
+        self.ngrok_path: str = DEFAULT_NGROK_PATH if ngrok_path is None else ngrok_path
+        #: The path to the ``ngrok`` config, defaults to ``None`` and ``ngrok`` manages it.
+        self.config_path: Optional[str] = DEFAULT_CONFIG_PATH if config_path is None else config_path
+        #: A ``ngrok`` authtoken to pass to commands (overrides what is in the config). If a value is not passed, will
+        #: attempt to use the environment variable ``NGROK_AUTHTOKEN`` if it is set.
+        self.auth_token: Optional[str] = auth_token or os.environ.get("NGROK_AUTHTOKEN")
+        #: The region in which ``ngrok`` should start.
+        self.region: Optional[str] = region
+        #: Whether ``ngrok`` should continue to be monitored (for logs, etc.) after startup is complete.
+        self.monitor_thread: bool = monitor_thread
+        #: A callback that will be invoked each time ``ngrok`` emits a log. The function should take
+        #: one argument of type :py:class:`str`. ``monitor_thread`` must be set to ``True`` or the function will
+        #: stop being called after ``ngrok`` finishes starting.
+        self.log_event_callback: Optional[Callable[[NgrokLog], None]] = log_event_callback
+        #: The max timeout, in seconds, to wait for ``ngrok`` to start.
+        self.startup_timeout: int = startup_timeout
+        #: The max number of logs to store in :class:`~pyngrok.process.NgrokProcess`'s ``logs`` variable.
+        self.max_logs: int = max_logs
+        #: The max timeout, in seconds, when making requests to ``ngrok``'s API.
+        self.request_timeout: float = request_timeout
+        #: Passed to :py:class:`subprocess.Popen` when launching ``ngrok``. (Python 3 and POSIX only).
+        self.start_new_session: bool = start_new_session
+        #: The major version of ``ngrok`` installed.
+        self.ngrok_version: str = ngrok_version
+        #: A ``ngrok`` API key.
+        self.api_key: Optional[str] = api_key or os.environ.get("NGROK_API_KEY")
+        #: The ``ngrok`` config version.
+        self.config_version = config_version
 
-# The master toctree document.
-master_doc = "index"
 
-# List of patterns, relative to source directory, that match files and
-# directories to ignore when looking for source files.
-# This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["build", "Thumbs.db", ".DS_Store", "venv"]
+_default_pyngrok_config: PyngrokConfig = PyngrokConfig()
 
-# If true, '()' will be appended to :func: etc. cross-reference text.
-add_function_parentheses = False
 
-# The name of the Pygments (syntax highlighting) style to use.
-pygments_style = "sphinx"
+def get_default() -> PyngrokConfig:
+    """
+    Get the default config to be used with methods in the :mod:`~pyngrok.ngrok` module. To override the
+    default individually, the ``pyngrok_config`` keyword arg can also be passed to most of these methods,
+    or set a new default config with :func:`~pyngrok.conf.set_default`.
 
-# -- Options for HTML output -------------------------------------------------
+    :return: The default ``pyngrok_config``.
+    """
+    if _default_pyngrok_config is None:
+        set_default(PyngrokConfig())
 
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-#
-html_theme = "alabaster"
+    return _default_pyngrok_config
 
-# Theme options are theme-specific and customize the look and feel of a theme
-# further.  For a list of options available for each theme, see the
-# documentation.
-#
-html_theme_options = {
-    "github_user": "alexdlaird",
-    "github_repo": "pyngrok",
-    "note_bg": "#FFF59C",
-}
 
-# Add any paths that contain custom static files (such as style sheets) here,
-# relative to this directory. They are copied after the builtin static files,
-# so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
-html_extra_path = ["_html"]
+def set_default(pyngrok_config: PyngrokConfig) -> None:
+    """
+    Set a new default config to be used with methods in the :mod:`~pyngrok.ngrok` module. To override the
+    default individually, the ``pyngrok_config`` keyword arg can also be passed to most of these methods.
 
-html_css_files = [
-    "custom.css",
-]
+    :param pyngrok_config: The new ``pyngrok_config`` to be used by default.
+    """
+    global _default_pyngrok_config
 
-# Custom sidebar templates, must be a dictionary that maps document names
-# to template names.
-#
-# The default sidebars (for documents that don't match any pattern) are
-# defined by theme itself.  Builtin themes are using these templates by
-# default: ``["localtoc.html", "relations.html", "sourcelink.html",
-# "searchbox.html"]``.
-#
-html_sidebars = {
-    "**": [
-        "sidebartoc.html",
-        "usefullinks.html",
-        "localtoc.html",
-        "searchbox.html",
-    ],
-}
+    _default_pyngrok_config = pyngrok_config
 
-toc_object_entries = False
 
-# If true, links to the reST sources are added to the pages.
-html_show_sourcelink = False
+def get_config_path(pyngrok_config: PyngrokConfig) -> str:
+    """
+    Return the ``config_path`` if set on the given ``pyngrok_configg``, otherwise return ``ngrok``'s default path.
 
-# If true, "Created using Sphinx" is shown in the HTML footer. Default is True.
-html_show_sphinx = False
-
-# -- Options for HTMLHelp output ---------------------------------------------
-
-# Output file base name for HTML help builder.
-htmlhelp_basename = "pyngrokdoc"
-
-# -- Options for LaTeX output ------------------------------------------------
-
-latex_elements = {
-    # The paper size ("letterpaper" or "a4paper").
-    #
-    # "papersize": "letterpaper",
-
-    # The font size ("10pt", "11pt" or "12pt").
-    #
-    # "pointsize": "10pt",
-
-    # Additional stuff for the LaTeX preamble.
-    #
-    # "preamble": "",
-
-    # Latex figure (float) alignment
-    #
-    # "figure_align": "htbp",
-}
-
-# Grouping the document tree into LaTeX files. List of tuples
-# (source start file, target name, title,
-#  author, documentclass [howto, manual, or own class]).
-latex_documents = [
-    (master_doc, "pyngrok.tex", "pyngrok Documentation",
-     author, "manual"),
-]
-
-# -- Options for manual page output ------------------------------------------
-
-# One entry per manual page. List of tuples
-# (source start file, name, description, authors, manual section).
-man_pages = [
-    (master_doc, "pyngrok", "pyngrok Documentation",
-     [author], 1)
-]
-
-# -- Options for Texinfo output ----------------------------------------------
-
-# Grouping the document tree into Texinfo files. List of tuples
-# (source start file, target name, title, author,
-#  dir menu entry, description, category)
-texinfo_documents = [
-    (master_doc, "pyngrok", "pyngrok Documentation",
-     author, "pyngrok", "A Python wrapper for ngrok",
-     "Miscellaneous"),
-]
-
-# -- Options for Epub output -------------------------------------------------
-
-# Bibliographic Dublin Core info.
-epub_title = project
-
-# The unique identifier of the text. This can be a ISBN number
-# or the project homepage.
-#
-# epub_identifier = ""
-
-# A unique identification for the text.
-#
-# epub_uid = ""
-
-# A list of files that should not be packed into the epub file.
-epub_exclude_files = ["search.html"]
-
-# -- Extension configuration -------------------------------------------------
-
-intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
-
-rst_prolog = """
-.. |pyngrok_version| replace:: {pyngrok_version}
-""".format(pyngrok_version=version)
+    :param pyngrok_config: The ``pyngrok`` configuration to first check for a ``config_path``.
+    :return: The path to the config file.
+    """
+    if pyngrok_config.config_path is not None:
+        return pyngrok_config.config_path
+    else:
+        return DEFAULT_NGROK_CONFIG_PATH
